@@ -1,14 +1,29 @@
+const util = require('./common/util')
+const AWS = require('aws-sdk')
+AWS.config.update({ region: 'eu-west-1' })
+const Lambda = new AWS.Lambda()
 const Imap = require("node-imap");
-const express = require("express");
-const app = express();
-const port = process.env.RDS_PORT || 5000;
 
-app.get("/confirmation", function (req, res) {
-    const email = req.query.email;
-    const password = req.query.password;
+const generateResponse = (statusCode, result) => {
+    return {
+      statusCode: statusCode,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(util.convertFromUuid(result)),
+      isBase64Encoded: false,
+    }
+  }
 
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "X-Requested-With");
+exports.handler = async (request, context, callback) => {
+  const response = {}
+  try {
+    const data = (process.env.env === 'local') ? JSON.parse(request) : request
+    const args = util.convertToUuid(data.arguments)
+    const { email, password } = args
 
     const imap = new Imap({
         user: email,
@@ -28,7 +43,7 @@ app.get("/confirmation", function (req, res) {
             var f = imap.seq.fetch(box.messages.total + ":*", {
                 bodies: ["HEADER.FIELDS (FROM)", "TEXT"],
             });
-            f.on("message", function (msg, seqno) {
+            f.on("message", function (msg) {
                 msg.on("body", function (stream, info) {
                     if (info.which === "TEXT") {
                         stream.on("data", function (chunk) {
@@ -42,7 +57,7 @@ app.get("/confirmation", function (req, res) {
                 });
             });
             f.once("error", function (err) {
-                res.json(err);
+                throw err
             });
             f.once("end", function () {
                 imap.end();
@@ -51,10 +66,21 @@ app.get("/confirmation", function (req, res) {
     });
 
     imap.once("error", function (err) {
-        res.json(err);
+        throw err
     });
 
-    imap.connect();
-});
+    response.code = imap.connect();
 
-app.listen(port)
+    callback(null, generateResponse(200, response.code))
+  } catch (error) {
+    console.log(error)
+    await util.invoke(Lambda, 'error', {
+      userId: 'userId',
+      type: 'invokeLambda',
+      functionName: 'TEAM_MEMBERS_GET',
+      errorMessage: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+      request,
+    })
+    callback(error, generateResponse(500))
+  }
+}

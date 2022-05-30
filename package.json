@@ -1,17 +1,24 @@
 {
-  "name": "gmail-nodejs-quickstart",
+  "name": "buildme-backend",
   "version": "1.0.0",
-  "description": "A simple Node.js command-line application that makes requests to the Gmail API.",
-  "private": true,
-  "dependencies": {
-    "express": "^4.18.1",
-    "node-imap": "^0.9.6"
-  },
-  "engines": {
-    "node": ">=6.4.0"
-  },
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "node ."
+    "del": "rm -rf build && rm -rf deploy && mkdir deploy",
+    "compile": "babel ./common --out-dir build/common && babel ./*.js --out-dir build",
+    "zip": "cd build && bestzip ../deploy/lambda.zip * ../node_modules/** ../package.json ../package-lock.json",
+    "build": "npm run copy-common && npm run del && npm run compile && npm run zip",
+    "copy-common": "rm -rf common && mkdir common && cd ../.. && copyfiles common/*/* rest_api/sources/post/ --soft && copyfiles common/* rest_api/sources/post/ --soft",
+    "deploy-prod": "npm run build && aws s3 cp deploy/lambda.zip s3://buildme-repo/sources/post.zip --profile weberlo-prod",
+    "deploy-dev": "npm run build && aws s3 cp deploy/lambda.zip s3://buildme-repo-dev/sources/post.zip --profile weberlo-dev",
+    "test": "aws lambda invoke --invocation-type RequestResponse --function-name eventProcessing --region us-east-1 --log-type Tail --payload file://events/website/optinEvent.json --profile buildme events/website/optin.txt",
+    "test-local": "lambda-local -e ./json/error_moving_links.json -l ./index.js -t 900 -p weberlo-prod -E {\\\"env\\\":\\\"prod\\\"\\,\\\"user_pool\\\":\\\"us-east-1_xMNOsYUPf\\\"}"
   },
-  "license": "Apache-2.0"
+  "author": "Andrey Kholkin",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.221.1",
+    "node-imap": "^0.9.6",
+    "slugid": "^3.0.0"
+  }
 }
